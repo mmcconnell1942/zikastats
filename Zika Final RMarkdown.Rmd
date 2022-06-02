@@ -1,0 +1,185 @@
+---
+title: "Zika Virus Transmission"
+author: "Matt McConnell"
+date: "5/1/2019"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+## Background
+The Zika virus was first isolated in Uganda in 1947, and is related to other viruses such as the dengue, yellow fever, and West Nile virus. It's symptoms include a rash, itching all over the body, high temperature, and joint/muscle pain. While the disease is typically not fatal, it poses dangers specifically to women. If a pregnant woman is infected with the Zika virus, her child has a very high risk of birth defects and later complications. As the main carrier for the virus is mosquitos, this virus is a serious threat for any woman who is pregnant or may become pregnant soon as it takes only one bite from an infected mosquito to become infected yourself.
+
+In late 2015 - early 2016, there was a large outbreak of the Zika virus in the Americas, with affected countries including Brazil, Colombia, Dominican Republic, El Salvador, Guatemala, Haiti, Mexico and the United States. From this outbreak, data from the Colombia Instituto Nacional de Salud was compiled by Buzzfeed on Github, with data spanning from early January to late Febuary of 2016. The data compiled gives information on the number of people infected with the virus, the number of people suspected to have the virus, and the total of each, grouped by each municipality and department of Colombia - and for those unfamiliar with Colombian geography, departments are the analog of U.S. states and municipalities are the analog of U.S. counties which make up those states.
+
+![A computer generated image of the Zika Virus[^Pic]](ZikaVirus.jpeg)
+
+[^Pic]: This picture is sourced from the website: <https://www.newscientist.com/article/2076386-zika-virus-outbreak-what-you-need-to-know/>
+
+## Methods
+For this study, I was interested in looking at the spread of the virus through the country from early January to late Febuary, and seeing if I could predict either growth rate or the total amount of people infected in Febuary. In order to do this, I took data on the number of infected from both January[^Source1] and Febuary[^Source2] of 2016, calculated the growth rate for each of the municipalities in each department. Since I was interested in predicting, I used a multiple linear regression model to try to predict both Growth Rate and the total number of infected by Febuary using the number of confirmed and suspected infected from January.
+
+[^Source1]: The data from January is accessible through this link: <https://github.com/BuzzFeedNews/zika-data/blob/master/data/parsed/colombia/colombia-municipal-2016-01-09.csv>
+[^Source2]: The data from Febuary is accessible through this link: <https://github.com/BuzzFeedNews/zika-data/blob/master/data/parsed/colombia/colombia-municipal-2016-02-20.csv>
+
+# Packages Required
+The following are the required packages for this report as well as a brief explanation of how they are used in the analysis.
+
+**EnvStats** - used so the formatting of the linear model analysis is clear and well formatted
+
+**DT** - used to format the data in a clear and concise data table
+
+**prettydoc** - used to format this HTML doc with this theme
+``` {r echo = FALSE}
+suppressWarnings(suppressMessages(library(EnvStats)))
+suppressWarnings(suppressMessages(library(DT)))
+suppressWarnings(suppressMessages(library(prettydoc)))
+```
+
+## About the Data
+The data collected for this report came from two different sources, each source corresponding to the data from either January or Febuary. As a result, in order to perform any kind of analysis on the data, the data had to first be imported and combined into one summary data set. After importing the data however, certain rows were missing from each of the different data tables, and in order to combine the tables they had to have the same number of rows in order for the data to correctly correpond between the two dates. This meant that I had to drop just under 30 rows in total between the two tables in order for them both to have corresponding data points. After trimming the data, I combined the tables into one summary table, and proceeded to calculate the growth proportion of the total number of cases in each municipality. After this calculation, I appended the growth column to the dataframe and changed the column names, completing the cleaning of the data.
+
+
+```{r}
+#import both data frames and drop "sivigila_code" column in febuary data
+read.csv("1-9-2016-ColZika.csv", header = T) -> Zika.1.9
+read.csv("2-20-2016-ColZika.csv", header = T) -> Zika.2.20
+Zika.2.20$sivigila_code <- NULL
+
+#find rows that dont exist in 1 data frame for both data frames 
+#returns boolean vector where "FALSE" is a row that is not in the other data frame
+Zika.1.9$municipality %in% Zika.2.20$municipality -> Jan.only
+Zika.2.20$municipality %in% Zika.1.9$municipality -> Feb.only
+
+#using boolean vector, drop rows that are not in both data frames
+Zika.1.9 = Zika.1.9[Jan.only,]
+Zika.2.20 = Zika.2.20[Feb.only,]
+
+#create final data table
+Confirmed.Jan <- data.frame(Zika.1.9[3] + Zika.1.9[4])
+Confirmed.Feb <- data.frame(Zika.2.20[3] + Zika.2.20[4])
+ZikaData <- data.frame(Zika.1.9[1:2],Confirmed.Jan[1],Zika.1.9[5],Confirmed.Feb[1],Zika.1.9[5],Zika.1.9[6], Zika.2.20[6])
+
+
+#Growth Proportion Function
+growth.function <- function(col1, col2){
+  #this function takes two columns of a data frame and calculates the growth proportion of the two in order to avoid the error dividing by 0, if the first column has a value of 0 the growth rate is equal to the value of the second column
+  #the function then returns a data.frame of size [1,len(col1)] of the growth proportion of each row
+  #the function also check to make sure the data is integers, and returns a print statement if it is not
+  growth.col<- data.frame()
+  if((class(col1[1]) != c("integer")) | (class(col2[1]) != c("integer"))){
+    print("The data you have input is of the wrong format, make sure the data consists of numbers.")
+  }else{
+    for(i in 1:length(col1)){
+    if(col1[i] == col2[i]){
+      growth.col[i,1] <- 1
+    }else if(col1[i] == 0){
+      growth.col[i,1] <- col2[i]
+    }else{
+      growth.col[i,1] <- 1 + (col2[i] - col1[i]) / col1[i]
+    }
+  }
+  return(growth.col)
+  }
+}
+
+#find Total Growth column
+Total.Growth.Proportion <- growth.function(Zika.1.9$zika_total,Zika.2.20$zika_total)
+
+#Add growth column to table
+ZikaData <- cbind(ZikaData, Total.Growth.Proportion)
+
+#create column labels and add them
+ColumnLabels <- c("Department", "Municipality", "Confirmed.Jan", "Suspected.Jan", "Confirmed.Feb", "Suspected.Feb", "Total.Jan", "Total.Feb", "Growth.Proportion")
+colnames(ZikaData) <- ColumnLabels
+```
+
+## Variables
+**Department** - indicates which department the data was collected in
+
+**Municipality** - indicates which municipality the data was collected in
+
+**Confirmed.Jan** - number of confirmed cases of the Zika virus for that municipality on 1/9/2016
+
+**Suspected.Jan** - number of suspected cases of the Zika virus for that municipality on 1/9/2016
+
+**Confirmed.Feb** - number of confirmed cases of the Zika virus for that municipality on 2/20/2016
+
+**Suspected.Feb** - number of suspected cases of the Zika virus for that municipality on 2/20/2016
+
+**Total.Jan** - number of total suspected or confirmed cases of the Zika virus for that municipality on 1/9/206
+
+**Total.Feb** - number of total suspected or confirmed cases of the Zika virus for that municipality on 2/20/206
+
+**Growth.Proportion** - this indicates the growth proportion of the total number of suspected or confirmed cases of the Zika virus from 1/9/2016 to 2/20/2016
+
+```{r}
+#ZikaData formatted in a nice table using package DT
+datatable(ZikaData)
+
+#histogram of Total.Feb
+hist(ZikaData$Total.Feb, main = "Total Infected - Febuary", xlab = "Total Infected - Febuary")
+
+#histogram of Growth.Population
+hist(ZikaData$Growth.Proportion, main = "Growth Proportion Data", xlab = "Growth Proportion")
+```
+
+### More Variable Information
+
+Since the purpose of this analysis is to attempt to predict both the total infected in Febuary and the Growth Population, the above histograms show the data from each of these variables. As you can tell from the plots, both distributions are highly skewed right, with outliers much greater than the upper fence.
+
+
+## Analysis
+For this analysis, I am using a multiple linear regression model trying to predict both the total number of people infected in Febuary (Total.Feb) and the growth rate (Growth.Proportion) of the virus based on the number of people confirmed and suspected to have the virus in January (Confirmed.Jan & Suspected.Jan)
+
+```{r}
+#MLR model predicting Total.Feb
+mlr.total <- lm(Total.Feb ~ Confirmed.Jan + Suspected.Jan, data = ZikaData)
+
+#MLR model predicting Growth.Proportion
+mlr.grow <- lm(Growth.Proportion ~ Confirmed.Jan + Suspected.Jan, data = ZikaData)
+
+#summary of model predicting Total.Feb
+summary(mlr.total)
+```
+#### MLR Model for Total.Feb
+Based on this model, there is a statistically significant relationship between those confirmed and suspected in January, and the total number of people infected in Febuary, as the p-value for both slopes is much smaller than 0.01. The model also has a relatively high r-squared value at 0.8436. All this information means the model could be a useful, provided the conditions are fulfilled.
+
+```{r}
+plot(mlr.total)
+```
+
+#### Conditions for Total.Feb Linear Model
+Based on the plots above, the conditions for a linear regression model are not satisfied. The plot of Residuals vs. Fitted shows that there is not constant variance in the residual, as the redisuals increase in a cone shape towards the right. The Normal Q-Q shows that the distribution of the residuals is not normally distributed, as it is not a linear pattern. The Scale-Location plot shows again that there is a trend in the residuals, and the Residuals vs. Leverage plot shows that there are influential points in the model. As all of these conditions are not satisfied and unwanted in a linear model, we can conclude that the model is not a useful one.
+
+```{r}
+#summary of model predicting Growth.Proportion
+summary(mlr.grow)
+```
+#### MLR Model for Growth.Proportion
+
+Based on this model output, this is not a useful linear model. Looking at the p-values for the slopes, both are greater than 0.5, a very high value meaning that there is not sufficient evidence to suggest that the slope is different from 0. The r-squared value is also basically 0, an extremely low value, again making this model not useful.
+``` {r}
+plot(mlr.grow)
+```
+
+#### Conditions for Growth.Proportion Linear Model
+
+In this model the conditions for a linear model are not met. Again, the Residuals vs. Fitted plot show that the variance of the residuals is not constant, and the Normal Q-Q plot shows the residuals are not normally distributed. The Scale vs. Location shows that the residuals are not evenly dispersed, and the Residuals vs. Leverage plot shows that there are no influential points in this model.
+
+
+## Summary
+To return to the purpose of this analysis, the goal was to fit a multiple linear regression model to the data in order to predict about values for a future number of infected people based on previous data. However, because of the nature of the data, while the model used predict the Febuary total seemed like a good fit for the data, the conditions for the model were not met, making the model unusable. For the model which attempted to predict the growth rate of the virus, the model was again unusable because of the conditions for the model, but also did not fit as a linear model with the data, shown by the extremely low r-squared value.
+
+One interesting possibility for this data set would be if it could be normalized. If the data could be normalized, the data at that point might fit the criteria of the linear model, and could potentially make the model to predict Total.Feb a viable option. This could also allow Welch's one way analysis of Variance to be used for the data, as it does not require the residuals to have a constant variance. This would then open up possibilities to compare the means between the different departments of Colombia, providing insight into which areas of the country were most greatly impacted by the virus. 
+
+## About the Author
+Matt McConnell is a sophmore at Clemson University studying Industrial Engineering with a Mathematical sciences minor. He was born in California, but grew up in Chapin, SC before attending at Clemson. When not doing homework, he enjoys playing pickup basketball and soccer with his friends, or playing board games with his roommates. He also enjoys hiking, and would much rather be in the mountains versus bumming on the beach.
+![Evidence of his mountain obsession.](mcconnellPic.png)
+
+
+
+
+
+
